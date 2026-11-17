@@ -9,7 +9,19 @@ namespace
 float dbToGain (float db) { return db <= -59.9f ? 0.0f : std::pow (10.0f, db / 20.0f); }
 }
 
-HarmonyResult computeHarmony (double c, const Scale& scale, const Params& p)
+double midiNoteCents (int note, double rootHz, double refHz, const Scale& scale, RetuneMode mode)
+{
+    const double c = 1200.0 * std::log2 (refHz * std::pow (2.0, (note - 69) / 12.0) / rootHz);
+    switch (mode)
+    {
+        case RetuneMode::Nearest: return scale.degreeCents (scale.nearestDegree (c));
+        case RetuneMode::Remap:   return scale.degreeCents ((int) std::lround (c / 100.0));
+        case RetuneMode::Off:     break;
+    }
+    return c;
+}
+
+HarmonyResult computeHarmony (double c, const Scale& scale, const Params& p, double rootHz)
 {
     HarmonyResult r;
     switch (p.retune)
@@ -36,6 +48,14 @@ HarmonyResult computeHarmony (double c, const Scale& scale, const Params& p)
     {
         const auto& vp = p.voices[(size_t) v];
         double interval;
+        if (p.midiHarmony)
+        {
+            const int note = p.midiNotes[(size_t) v];
+            r.active[(size_t) v] = note >= 0;
+            // absolute target: the shift is measured from the incoming pitch, so the correction is already included
+            r.shift[(size_t) v] = note >= 0 ? midiNoteCents (note, rootHz, p.refHz, scale, p.retune) - c + vp.cents : r.correction + vp.cents;
+            continue;
+        }
         if (vp.mode == VoiceMode::Interval)
             interval = vp.semitones * 100.0;
         else
@@ -88,7 +108,7 @@ void Engine::reset()
     curDry = dbToGain (params.dryDb);
     curOut = dbToGain (params.outputDb);
     // seed the harmony intervals so the first note doesn't glide in from unison
-    const auto h = computeHarmony (0.0, scaleFor (params.scaleIndex), params);
+    const auto h = computeHarmony (0.0, scaleFor (params.scaleIndex), params, rootHz());
     for (int v = 0; v < kNumVoices; ++v) intervalSmooth[(size_t) v].value = h.shift[(size_t) v];
 }
 
@@ -133,7 +153,7 @@ void Engine::control()
         lastPeriod = (float) (sr / f);
         havePitch = true;
     }
-    const auto h = computeHarmony (havePitch ? lastCents : 0.0, scale, params);
+    const auto h = computeHarmony (havePitch ? lastCents : 0.0, scale, params, rootHz());
 
     // humanize: slow random drift per voice
     if (++driftCount >= (int) (cr * 0.25))
@@ -164,13 +184,13 @@ void Engine::control()
         sh.setPeriod (havePitch ? lastPeriod : 0.0f);
         sh.setDelaySamples ((float) ((vp.delayMs + dDrift) * 0.001 * sr));
 
-        const float g = vp.on ? dbToGain (vp.levelDb) : 0.0f;
+        const float g = (vp.on && h.active[(size_t) v]) ? dbToGain (vp.levelDb) : 0.0f;
         const float a = (std::clamp (vp.pan, -1.0f, 1.0f) + 1.0f) * 0.25f * (float) kPi;
         gainL[(size_t) v] = g * std::cos (a);
         gainR[(size_t) v] = g * std::sin (a);
 
         status.voiceCents[(size_t) v].store ((float) ((havePitch ? lastCents : 0.0) + total));
-        status.voiceOn[(size_t) v].store (vp.on);
+        status.voiceOn[(size_t) v].store (vp.on && h.active[(size_t) v]);
     }
     dryGain = dbToGain (params.dryDb);
     wetGain = dbToGain (params.wetDb);

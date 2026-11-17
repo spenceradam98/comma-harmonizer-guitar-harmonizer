@@ -132,6 +132,28 @@ static void testScala()
     CHECK (! parseScala ("desc\n2\n300.0\n200.0\n", s, err), "descending should fail");
 }
 
+static void testMidiHarmony()
+{
+    const auto& b = builtinScales();
+    const auto& chrom = b[(size_t) scaleIndexByName ("Chromatic")];
+    const double root = 261.6256;   // C4
+    Params p; p.midiHarmony = true;
+    p.voices[0] = voiceScale (2, 0, 0);
+    p.voices[1] = voiceScale (2, 0, 0, 10);
+    p.midiNotes = { 64, 67, -1, -1 };   // E4, G4
+    // input A3 (-300c from C4): voice 1 must land on E4 (+400c) => shift +700
+    auto h = computeHarmony (-300, chrom, p, root);
+    CHECK (std::abs (h.shift[0] - 700) < 0.01, "MIDI voice 1 shift %.2f", h.shift[0]);
+    CHECK (std::abs (h.shift[1] - 1010) < 0.01, "MIDI voice 2 shift incl. detune %.2f", h.shift[1]);
+    CHECK (h.active[0] && h.active[1] && ! h.active[2] && ! h.active[3], "MIDI active flags");
+    // through a tuning: E4 snapped to just major is 386.3c
+    const auto& just = b[(size_t) scaleIndexByName ("Just Major (5-limit)")];
+    CHECK (std::abs (midiNoteCents (64, root, 440, just, RetuneMode::Nearest) - 386.3137) < 0.01, "MIDI E4 in just major");
+    // remap: on 24-EDO, E4 (4 keys up) becomes 200c
+    const auto& qt = b[(size_t) scaleIndexByName ("24-EDO Quarter Tones")];
+    CHECK (std::abs (midiNoteCents (64, root, 440, qt, RetuneMode::Remap) - 200) < 0.01, "MIDI remap 24-EDO");
+}
+
 static void testEngine()
 {
     const double sr = 48000;
@@ -168,6 +190,7 @@ int main()
     testShifter();
     testScales();
     testScala();
+    testMidiHarmony();
     testEngine();
     if (failures == 0) std::printf ("All engine tests passed\n");
     return failures == 0 ? 0 : 1;

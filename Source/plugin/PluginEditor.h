@@ -37,9 +37,9 @@ private:
     CommaLookAndFeel lnf;
     std::vector<std::unique_ptr<Knob>> knobs;
 
-    juce::ComboBox presetBox, themeBox, keyBox, scaleBox, retuneBox;
+    juce::ComboBox presetBox, themeBox, keyBox, scaleBox, retuneBox, midiBox;
     juce::TextButton prevPreset { "<" }, nextPreset { ">" }, loadScl { "Load .scl" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> keyAttach, scaleAttach, retuneAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> keyAttach, scaleAttach, retuneAttach, midiAttach;
 
     struct VoiceUi
     {
@@ -55,7 +55,7 @@ private:
     Knob *amount = nullptr, *speed = nullptr, *glide = nullptr, *refHz = nullptr, *gate = nullptr, *humanize = nullptr,
          *dry = nullptr, *wet = nullptr, *output = nullptr;
 
-    juce::Rectangle<int> header, pitchPanel, tuningPanel, mixPanel, wheelArea, readoutArea, meterArea, sclInfoArea;
+    juce::Rectangle<int> header, pitchPanel, tuningPanel, mixPanel, wheelArea, readoutArea, meterArea, sclInfoArea, midiInfoArea;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::Image grainTexture;
     float inMeter = 0, outMeter = 0;

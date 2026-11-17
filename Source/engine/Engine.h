@@ -44,6 +44,12 @@ struct Params
     float wetDb = 0.0f;
     float outputDb = 0.0f;
     std::array<VoiceParams, kNumVoices> voices {};
+
+    // MIDI "Play Harmony": voice i sounds held MIDI note i (lowest first) instead of its interval.
+    // -1 = no note held for that voice, which silences it. Notes are mapped through the
+    // tuning the same way frets are (Snap / Remap), so a keyboard plays the microtonal scale too.
+    bool midiHarmony = false;
+    std::array<int, kNumVoices> midiNotes { -1, -1, -1, -1 };
 };
 
 // What the UI shows. Written by the audio thread, read by the editor.
@@ -118,6 +124,10 @@ struct HarmonyResult
     double correction = 0;      // applied to the lead (dry) signal
     int degree = 0;             // degree the input is heard as
     std::array<double, kNumVoices> shift {};   // total shift per voice, relative to the input
+    std::array<bool, kNumVoices> active { true, true, true, true };   // false = MIDI voice with no note
 };
-HarmonyResult computeHarmony (double inputCents, const Scale& scale, const Params& p);
+
+// Cents above the root for a MIDI note, mapped through the tuning by the retune mode.
+double midiNoteCents (int note, double rootHz, double refHz, const Scale& scale, RetuneMode mode);
+HarmonyResult computeHarmony (double inputCents, const Scale& scale, const Params& p, double rootHz = 261.6256);
 } // namespace cm

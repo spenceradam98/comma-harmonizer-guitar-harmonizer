@@ -20,7 +20,7 @@ public:
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return JucePlugin_Name; }
-    bool acceptsMidi() const override { return false; }
+    bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.2; }
@@ -44,6 +44,9 @@ public:
     juce::String loadScala (const juce::File& file);
     juce::String getCustomScaleName() const { return customScale.getName(); }
 
+    int getMidiKey() const { return midiKey.load(); }   // -1 = none received
+    std::array<int, cm::kNumVoices> getHeldNotes() const;
+
     juce::String getThemeName() const { return themeName; }
     void setThemeName (const juce::String& t) { themeName = t; }
 
@@ -55,7 +58,11 @@ private:
     cm::Params readParams() const;
     bool applyScalaText (const juce::String& text, juce::String& error);
 
+    void handleMidi (const juce::MidiBuffer&);
+
     cm::Engine engine;
+    std::atomic<int> midiKey { -1 };
+    std::array<std::atomic<int>, 16> held {};   // held MIDI notes in press order, -1 = empty (audio thread writes)
     cm::Scale customScale;
     juce::String customScaleText;
     juce::String themeName { "Midnight" };

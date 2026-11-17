@@ -1,4 +1,4 @@
-# Comma: guitar harmonizer / microtonal simulator (design plan, v0.1)
+# Comma: guitar harmonizer / microtonal simulator (design plan, v0.2)
 
 Stack: JUCE 8.0.4, C++17, CMake, VST3 + Standalone, same layout as Ferro Echo and Crate12
 (JUCE-free engine with its own tests, thin plugin wrapper). Scalar DSP only, so it runs
@@ -51,6 +51,18 @@ loads any Scala file, saved inside the DAW session.
   standard guitar behaves like a microtonal fretboard (24-EDO = quarter-tone guitar,
   19-EDO fretboard, Carlos Alpha, Bohlen-Pierce).
 
+## MIDI control (v0.2)
+
+Comma takes MIDI input (route a keyboard or a MIDI track to it in the DAW). The **MIDI** menu:
+
+- **MIDI Off:** ignored.
+- **MIDI Sets Key:** the last note pressed sets the key, so you can change key per song
+  section from a MIDI clip. The scale stays as chosen.
+- **MIDI Plays Harmony:** voices 1-4 sing the notes you hold, lowest note on voice 1 (the four
+  most recent notes if you hold more). A voice with no note held is silent. Level, pan, delay,
+  detune and Glide (as portamento) still apply. Notes go through the tuning the same way
+  frets do, so with Snap or Remap a keyboard plays the microtonal scale.
+
 ## UI
 
 Header with preset browser (23 factory presets in Harmony, Intervals and Microtonal
@@ -64,6 +76,6 @@ changes the knob style as well as the colours. Theme is saved with the session.
 
 - Formant preservation (big intervals sound "chipmunk"/"giant"), and a higher-quality
   PSOLA shifter mode.
-- Polyphonic (chord) harmonizing, which needs a different, heavier approach.
-- MIDI control: harmony key from incoming MIDI, or play harmony notes from a keyboard.
+- Polyphonic (chord) harmonizing, which needs a different, heavier approach. On the roadmap,
+  not planned for the next version.
 - Resizable UI, user preset save/load, .kbm keyboard mapping files, AU format.

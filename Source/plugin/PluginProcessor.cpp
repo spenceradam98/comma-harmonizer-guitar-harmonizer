@@ -25,6 +25,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout CommaProcessor::createLayout
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "scale", 1 }, "Scale", scales, 0));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "retune", 1 }, "Retune",
                                                          StringArray { "Off", "Snap to Scale", "Remap Frets" }, 0));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "midiMode", 1 }, "MIDI Mode",
+                                                         StringArray { "MIDI Off", "MIDI Sets Key", "MIDI Plays Harmony" }, 0));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "retuneAmt", 1 }, "Retune Amount",
                                                         NormalisableRange<float> (0, 100, 0.1f), 100.0f, AudioParameterFloatAttributes().withStringFromValueFunction (pct)));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "retuneSpeed", 1 }, "Retune Speed",
@@ -77,6 +79,7 @@ CommaProcessor::CommaProcessor()
 {
     customScale = cm::builtinScales().front();
     customScale.setName ("No .scl loaded");
+    for (auto& h : held) h.store (-1);
     setCurrentProgram (0);   // start on the first factory preset
 }
 
@@ -111,6 +114,13 @@ cm::Params CommaProcessor::readParams() const
     p.dryDb = v ("dry");
     p.wetDb = v ("wet");
     p.outputDb = v ("output");
+    const int midiMode = (int) v ("midiMode");
+    if (midiMode == 1 && midiKey.load() >= 0) p.key = midiKey.load();
+    if (midiMode == 2)
+    {
+        p.midiHarmony = true;
+        p.midiNotes = getHeldNotes();
+    }
     for (int i = 0; i < cm::kNumVoices; ++i)
     {
         auto& vp = p.voices[(size_t) i];
@@ -126,9 +136,56 @@ cm::Params CommaProcessor::readParams() const
     return p;
 }
 
-void CommaProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+std::array<int, cm::kNumVoices> CommaProcessor::getHeldNotes() const
+{
+    // the four most recently pressed notes, sorted low to high: voice 1 = lowest
+    std::array<int, 16> all {};
+    int n = 0;
+    for (auto& h : held) { const int x = h.load(); if (x >= 0) all[(size_t) n++] = x; }
+    const int first = std::max (0, n - cm::kNumVoices);
+    std::array<int, cm::kNumVoices> out { -1, -1, -1, -1 };
+    int m = 0;
+    for (int i = first; i < n; ++i) out[(size_t) m++] = all[(size_t) i];
+    std::sort (out.begin(), out.begin() + m);
+    return out;
+}
+
+void CommaProcessor::handleMidi (const juce::MidiBuffer& midi)
+{
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn())
+        {
+            const int note = msg.getNoteNumber();
+            midiKey.store (note % 12);
+            // remove if already held, then append (press order is kept by compacting)
+            std::array<int, 16> list {};
+            int n = 0;
+            for (auto& h : held) { const int x = h.load(); if (x >= 0 && x != note) list[(size_t) n++] = x; }
+            if (n == 16) { std::copy (list.begin() + 1, list.end(), list.begin()); --n; }
+            list[(size_t) n++] = note;
+            for (int i = 0; i < 16; ++i) held[(size_t) i].store (i < n ? list[(size_t) i] : -1);
+        }
+        else if (msg.isNoteOff())
+        {
+            const int note = msg.getNoteNumber();
+            std::array<int, 16> list {};
+            int n = 0;
+            for (auto& h : held) { const int x = h.load(); if (x >= 0 && x != note) list[(size_t) n++] = x; }
+            for (int i = 0; i < 16; ++i) held[(size_t) i].store (i < n ? list[(size_t) i] : -1);
+        }
+        else if (msg.isAllNotesOff() || msg.isAllSoundOff())
+        {
+            for (auto& h : held) h.store (-1);
+        }
+    }
+}
+
+void CommaProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+    handleMidi (midi);
     const int inCh = getTotalNumInputChannels(), outCh = getTotalNumOutputChannels();
     for (int c = inCh; c < outCh; ++c) buffer.clear (c, 0, buffer.getNumSamples());
     engine.setParams (readParams());

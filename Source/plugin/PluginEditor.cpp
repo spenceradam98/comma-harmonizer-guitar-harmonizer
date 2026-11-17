@@ -40,7 +40,9 @@ String CommaEditor::stepName (int degrees, int scaleSize)
 String CommaEditor::describeVoice (int v) const
 {
     const auto& st = proc.getStatus();
-    if (! proc.currentParams().voices[(size_t) v].on) return "off";
+    const auto params = proc.currentParams();
+    if (! params.voices[(size_t) v].on) return "off";
+    if (params.midiHarmony && params.midiNotes[(size_t) v] < 0) return "MIDI: no note held";
     if (st.detectedHz.load() <= 0) return "waiting for a note";
     const double hz = proc.rootHz() * std::pow (2.0, st.voiceCents[(size_t) v].load() / 1200.0);
     return "-> " + noteWithCents (hz);
@@ -88,6 +90,13 @@ CommaEditor::CommaEditor (CommaProcessor& p) : AudioProcessorEditor (&p), proc (
     retuneBox.addItem ("Off", 1);
     retuneBox.addItem ("Snap to Scale", 2);
     retuneBox.addItem ("Remap Frets", 3);
+    midiBox.addItem ("MIDI Off", 1);
+    midiBox.addItem ("MIDI Sets Key", 2);
+    midiBox.addItem ("MIDI Plays Harmony", 3);
+    midiAttach = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, "midiMode", midiBox);
+    midiBox.setTooltip ("MIDI Sets Key: the last note you press on a keyboard or in a MIDI track sets the key.\n"
+                        "MIDI Plays Harmony: voices 1-4 sing the notes you hold (lowest note = voice 1), mapped through the tuning.");
+    addAndMakeVisible (midiBox);
     keyAttach = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, "key", keyBox);
     scaleAttach = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, "scale", scaleBox);
     retuneAttach = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, "retune", retuneBox);
@@ -289,6 +298,10 @@ void CommaEditor::resized()
         knobRow2.removeFromLeft (kw2 / 2);
         placeKnob (*gate, knobRow2.removeFromLeft (kw2));
         placeKnob (*humanize, knobRow2.removeFromLeft (kw2));
+        knobRow2.removeFromLeft (8);
+        auto m = knobRow2.withSizeKeepingCentre (knobRow2.getWidth(), 48);
+        midiBox.setBounds (m.removeFromTop (26));
+        midiInfoArea = m.withTrimmedTop (4);
     }
 
     // mix panel
@@ -417,7 +430,7 @@ void CommaEditor::drawWheel (Graphics& g, Rectangle<float> area)
     // centre text: key + scale
     g.setColour (t.dim);
     g.setFont (FontOptions (11.0f));
-    const String keyName = cm::noteName ((int) proc.apvts.getRawParameterValue ("key")->load());
+    const String keyName = cm::noteName (proc.currentParams().key);
     g.drawFittedText (keyName + " " + scale.getName(), Rectangle<float> (R * 1.2f, 30).withCentre (c.translated (0, R * 0.30f)).toNearestInt(),
                       Justification::centred, 2);
 
@@ -506,6 +519,17 @@ void CommaEditor::paint (Graphics& g)
                     ? "Custom: " + proc.getCustomScaleName() : String ("Period " + String (proc.currentScale().period(), 1) + "c, "
                                                                        + String (proc.currentScale().n) + " notes");
         g.drawText (s, sclInfoArea, Justification::centredLeft);
+
+        const int mm = (int) proc.apvts.getRawParameterValue ("midiMode")->load();
+        String mi;
+        if (mm == 1) mi = proc.getMidiKey() >= 0 ? "Key from MIDI: " + String (cm::noteName (proc.getMidiKey())) : String ("Waiting for a MIDI note");
+        if (mm == 2)
+        {
+            int held = 0;
+            for (int x : proc.getHeldNotes()) if (x >= 0) ++held;
+            mi = String (held) + (held == 1 ? " note held" : " notes held");
+        }
+        g.drawText (mi, midiInfoArea, Justification::centredLeft);
     }
 
     // meters
@@ -559,6 +583,9 @@ void CommaEditor::timerCallback()
             layoutChanged = true;
         }
         ui.degrees->slider.updateText();   // step names depend on the scale size
+        ui.degrees->slider.setEnabled (! p.midiHarmony);
+        ui.semis->slider.setEnabled (! p.midiHarmony);
+        ui.mode.setEnabled (! p.midiHarmony);
     }
     const bool retuneOn = p.retune != cm::RetuneMode::Off;
     amount->slider.setEnabled (retuneOn);
@@ -573,6 +600,7 @@ void CommaEditor::timerCallback()
         repaint (pitchPanel);
         repaint (meterArea);
         repaint (sclInfoArea);
+        repaint (midiInfoArea);
         for (auto& ui : voices) repaint (ui.infoArea);
     }
 }

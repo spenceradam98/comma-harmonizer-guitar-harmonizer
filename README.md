@@ -3,7 +3,7 @@
 A guitar harmonizer and microtonal tuning simulator (VST3 + standalone). Up to four
 harmony voices that follow your key and scale, plus retuning that makes a normal
 12-TET guitar play just intonation, quarter tones, maqam scales, 19/31-EDO or any
-Scala `.scl` tuning. See `docs/DESIGN.md`.
+Scala `.scl` tuning. MIDI input can set the key or play the harmony notes. See `docs/DESIGN.md`.
 
 ![Comma](docs/screenshot.png)
 
